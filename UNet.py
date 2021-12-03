@@ -5,28 +5,6 @@ import torch
 import torch.nn as nn
 import operator
 
-
-
-class AxisAlignedConvGaussian(nn.Module):
-
-    def __init__(self, input_channels, filters_enc, output_channels):
-
-        super(AxisAlignedConvGaussian, self).__init__()
-
-        #Encoder
-        layers = {}
-        output_dim = 0
-        for i, filter in enumerate(self.filters_enc):
-
-            input_dim = self.input_channels if i == 0 else output_dim
-            output_dim = filter
-
-            layers["enc{}_unetblock".format(i)] = UNet._block(input_dim, output_dim, "enc{}".format(i))
-            layers["enc{}_maxpooling".format(i)] = nn.AvgPool2d(kernel_size = 2, stride = 2)
-
-        self.enc_layers = nn.ModuleDict(layers)
-
-
 class UNet(nn.Module):
     def __init__(self, input_channels, filters_enc, output_channels):
 
@@ -76,6 +54,8 @@ class UNet(nn.Module):
         self.final_layer = nn.Sequential(
             UNet._block(output_dim, self.output_channels, "final_layer")
         )
+
+
         #self.layers.apply(init_weights)
 
 
@@ -101,34 +81,37 @@ class UNet(nn.Module):
 
 
     @staticmethod
-    def _block(in_channels, features, name):
+    def _block(in_channels, features_out, name, mid_feature = 0, midle_layers = 0):
+
+        layers = {}
+        layers["{}_conv1".format(name)] = UNet._unit_block(in_channels = in_channels, out_channels = (features_out if midle_layers == 0 else mid_feature), name = "{}_conv1".format(name))
+
+        for i in range(midle_layers):
+            layers["{}_conv{}".format(name, i + 2)] = UNet._unit_block(in_channels = mid_feature, out_channels = mid_feature, name = "{}_conv{}".format(name, i + 2))
+
+        layers["{}_conv{}".format(name, midle_layers + 2)] = UNet._unit_block(in_channels = (features_out if midle_layers == 0 else mid_feature), out_channels = features_out, name = "{}_conv{}".format(name, midle_layers + 2))
+
+        return nn.Sequential(OrderedDict(layers))
+
+
+    @staticmethod
+    def _unit_block(in_channels, out_channels, name):
+
         return nn.Sequential(
             OrderedDict(
                 [
                     (
-                        name + "conv1",
+                        name + "_conv",
                         nn.Conv2d(
                             in_channels=in_channels,
-                            out_channels=features,
+                            out_channels=out_channels,
                             kernel_size=3,
                             padding=1,
-                            bias=False,
+                            bias=True,
                         ),
                     ),
-                    (name + "norm1", nn.BatchNorm2d(num_features=features)),
-                    (name + "relu1", nn.ReLU(inplace=True)),
-                    (
-                        name + "conv2",
-                        nn.Conv2d(
-                            in_channels=features,
-                            out_channels=features,
-                            kernel_size=3,
-                            padding=1,
-                            bias=False,
-                        ),
-                    ),
-                    (name + "norm2", nn.BatchNorm2d(num_features=features)),
-                    (name + "relu2", nn.ReLU(inplace=True)),
+                    (name + "_norm", nn.BatchNorm2d(num_features=out_channels)),
+                    (name + "_relu", nn.ReLU(inplace=True)),
                 ]
             )
         )
