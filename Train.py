@@ -41,9 +41,17 @@ def l2_regularisation(m):
 
 def preprocessing():
 
+    tt = [transforms.ColorJitter(),
+    transforms.RandomCrop(64),
+    transforms.RandomRotation((0,360)),
+    transforms.GaussianBlur(2),
+    transforms.RandomErasing(),
+    ]
+
     preprocess_in = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+        transforms.RandomChoice(tt)
         transforms.Resize((img_w, img_h))
     ])
 
@@ -99,18 +107,17 @@ def train(**kwargs):
         model.load_state_dict(torch.load(kwargs["model_add"])['model_state_dict'])
         print("model state dict loaded...")
 
-    #model = unet.to(device)
+    model = unet.to(device)
 
-    # tr_loader = MapillaryLoader(data_path, "v2.0",
-    #                             preprocess_in, preprocess_ou, mode = 'tra')
-    # train_loader = DataLoader(dataset = tr_loader, batch_size = wandb.config.batch_size, shuffle = True)
-    #
-    # val_loader = MapillaryLoader(data_path, "v2.0",
-    #                             preprocess_in, preprocess_ou, mode = 'val')
-    # val_loader = DataLoader(dataset = val_loader, batch_size = wandb.config.batch_size, shuffle = True)
+    tr_loader = CityscapesLoader(data_path, preprocess_in, preprocess_ou, mode = 'train')
+    train_loader = DataLoader(dataset = tr_loader, batch_size = wandb.config.batch_size, shuffle = True)
+
+    val_loader = CityscapesLoader(data_path, preprocess_in, preprocess_ou, mode = 'val')
+    val_loader = DataLoader(dataset = val_loader, batch_size = wandb.config.batch_size, shuffle = True)
+
     #weight_decay = 1e-5
     optimizer = torch.optim.AdamW(model.parameters, lr =  kwargs["continue_tra"], weight_decay =  0)
-    cross_entropy = nn.BCEWithLogitsLoss(size_average = False, reduce = False, reduction = None)
+    criterion = nn.BCEWithLogitsLoss(size_average = False, reduce = False, reduction = None)
 
 
     if kwargs["continue_tra"]:
@@ -148,7 +155,7 @@ def train(**kwargs):
                         batbar.set_description("Batch {}".format(i + 1))
                         optimizer.zero_grad()
 
-                        prior_latent_space, posterior_latent_space, reconstruct_posterior, reconstruct_prior = model.forward(batch['image'], batch['label'])
+                        prior_latent_space, posterior_latent_space, reconstruct_posterior = model.forward(batch['image'], batch['label'])
 
                         #elbo = elbo(batch['label'], prior_latent_space, posterior_latent_space, reconstruct_posterior, reconstruct_prior)
 
@@ -158,7 +165,7 @@ def train(**kwargs):
                         #mean_reconstruction_loss = torch.mean(reconstruction_loss)
 
                         elbo = reconstruction_loss + (beta * kl)
-                        reg_loss = l2_regularisation(model.posterior) + l2_regularisation(model.prior) + l2_regularisation(model.fcomb.layers)
+                        reg_loss = l2_regularisation(model.posterior) + l2_regularisation(model.prior) + l2_regularisation(model.decoder_emb) + l2_regularisation(model.transformer)
                         loss = elbo + (kwargs["continue_tra"] * reg_loss)
                         loss.backward()
                         optimizer.step()
@@ -192,7 +199,7 @@ def train(**kwargs):
 
                                 reconstruction_loss = []
                                 for reconstruct_prior in model.inference(batch['image']):
-                                    reconstruction_loss.insert(criterion(input = reconstruct_prior, target = batch['label']).item())
+                                    reconstruction_loss.append(criterion(input = reconstruct_prior, target = batch['label']).item())
 
                                 val_loss += mean(reconstruction_loss)
 
