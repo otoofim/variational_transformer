@@ -109,6 +109,16 @@ def train(**kwargs):
 
     model = unet.to(device)
 
+
+    preprocess_in = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize(mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]),
+    ])
+
+    preprocess_ou = transforms.Compose([
+        transforms.ToTensor(),
+    ])
+
     tr_loader = CityscapesLoader(data_path, preprocess_in, preprocess_ou, mode = 'train')
     train_loader = DataLoader(dataset = tr_loader, batch_size = wandb.config.batch_size, shuffle = True)
 
@@ -156,6 +166,7 @@ def train(**kwargs):
                         optimizer.zero_grad()
 
                         prior_latent_space, posterior_latent_space, reconstruct_posterior = model.forward(batch['image'], batch['label'])
+                        break
 
                         #elbo = elbo(batch['label'], prior_latent_space, posterior_latent_space, reconstruct_posterior, reconstruct_prior)
 
@@ -175,6 +186,8 @@ def train(**kwargs):
 
                         images = batch['image']
                         labels = batch['label']
+
+                break
 
 
                 org_img = {'input':wandb.Image(batch['image']),
