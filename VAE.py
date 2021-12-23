@@ -6,7 +6,24 @@ import torch.nn as nn
 import operator
 from UNet import *
 from torch.distributions import Normal, Independent, kl
+import matplotlib.pyplot as plt
 
+
+def truncated_normal_(tensor, mean=0, std=1):
+    size = tensor.shape
+    tmp = tensor.new_empty(size + (4,)).normal_()
+    valid = (tmp < 2) & (tmp > -2)
+    ind = valid.max(-1, keepdim=True)[1]
+    tensor.data.copy_(tmp.gather(-1, ind).squeeze(-1))
+    tensor.data.mul_(std).add_(mean)
+
+
+def init_weights(m):
+    if type(m) == nn.Conv2d or type(m) == nn.ConvTranspose2d:
+        nn.init.kaiming_normal_(m.weight, mode='fan_in', nonlinearity='relu')
+        #nn.init.normal_(m.weight, std=0.001)
+        #nn.init.normal_(m.bias, std=0.001)
+        truncated_normal_(m.bias, mean=0, std=0.001)
 
 
 class AxisAlignedConvGaussian(nn.Module):
@@ -36,6 +53,7 @@ class AxisAlignedConvGaussian(nn.Module):
         layers["linear_layer"] = nn.Linear(num_features_before_fcnn, self.latent_dim * 2)
         self.enc_layers = nn.ModuleDict(layers)
 
+        self.enc_layers.apply(init_weights)
 
     def forward(self, input, segm = None):
 
@@ -46,11 +64,14 @@ class AxisAlignedConvGaussian(nn.Module):
             output = torch.cat((input, segm), dim=1)
 
 
-        for layer in self.enc_layers:
+        for i, layer in enumerate(self.enc_layers):
             if layer == "linear_layer":
                 feature = functools.reduce(operator.mul, output.shape[1:], 1)
                 output = self.enc_layers[layer](output.view(-1, feature))
             else:
+                # if torch.isnan(output).any():
+                #     print(layer)
+                #     print(i)
                 output = self.enc_layers[layer](output)
 
         mu = output[:,:self.latent_dim]

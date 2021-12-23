@@ -7,6 +7,8 @@ from cityscapesscripts.helpers.labels import labels as city_labels
 from torchvision.datasets import Cityscapes
 import glob
 import matplotlib.pyplot as plt
+from torchvision import transforms
+
 
 
 
@@ -34,14 +36,17 @@ class CityscapesLoader(Dataset):
 
         img = Image.open(self.dataset[idx])
         seg_mask = np.array(Image.open(self.dataset[idx].replace("images", "masks")))
-        label = self.create_prob_mask(seg_mask)
+        seg_color = np.array(Image.open(self.dataset[idx].replace("images", "color")).convert('RGB'))
+        label = torch.tensor(self.create_prob_mask(seg_mask))
 
         if self.transform_in:
             img = self.transform_in(img)
+            seg_color = transforms.ToTensor()(seg_color)
         if self.transform_ou:
             label = self.transform_ou(label)
+            #seg_color = transforms.ToTensor()(self.transform_ou(seg_color))
 
-        return {'image': img, 'label': label}
+        return {'image': img.float(), 'label': label.permute(2,0,1).float(), "seg": seg_color.float()}
 
 
     def get_num_classes(self):

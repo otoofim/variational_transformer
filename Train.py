@@ -1,6 +1,6 @@
 import torchvision.models as models
 from torchvision import transforms
-from dataloader import *
+from dataloader_cityscapes import *
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
@@ -10,10 +10,12 @@ from tqdm import tqdm
 from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import wandb
-from unet import *
 import os
 import warnings
 from statistics import mean
+from Variational_transformer import *
+from torch.distributions import Normal, Independent, kl, MultivariateNormal
+warnings.simplefilter(action='ignore', category=FutureWarning)
 warnings.filterwarnings("ignore")
 
 def l2_regularisation(m):
@@ -26,58 +28,19 @@ def l2_regularisation(m):
             l2_reg = l2_reg + W.norm(2)
     return l2_reg
 
-# def elbo(segm, prior_latent_space, posterior_latent_space, reconstruct_posterior, reconstruct_prior):
-#     """
-#     Calculate the evidence lower bound of the log-likelihood of P(Y|X)
-#     """
-#
-#     criterion = nn.BCEWithLogitsLoss(size_average = False, reduce = False, reduction = None)
-#     kl = torch.mean(kl.kl_divergence(posterior_latent_space, prior_latent_space))
-#     reconstruction_loss = criterion(input = reconstruct_posterior, target = segm)
-#     reconstruction_loss = torch.sum(reconstruction_loss)
-#     #mean_reconstruction_loss = torch.mean(reconstruction_loss)
-#
-#     return -(reconstruction_loss + (beta * kl))
-
-def preprocessing():
-
-    tt = [transforms.ColorJitter(),
-    transforms.RandomCrop(64),
-    transforms.RandomRotation((0,360)),
-    transforms.GaussianBlur(2),
-    transforms.RandomErasing(),
-    ]
-
-    preprocess_in = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-        transforms.RandomChoice(tt)
-        transforms.Resize((img_w, img_h))
-    ])
-
-    preprocess_ou = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Resize((img_w, img_h))
-    ])
-
 
 def train(**kwargs):
 
 
     hyperparameter_defaults = {
-        "batch_size": kwargs["batch_size"],
-        "lr": kwargs["lr"],
-        "epochs": kwargs["epochs"],
-        "momentum": kwargs["momentum"],
-        "architecture": kwargs["architecture"],
-        "dataset": kwargs["dataset"],
-        "run": kwargs["run"]
+        "run": kwargs["run_name"],
+        "hyper_params": kwargs,
     }
 
     base_add = os.getcwd()
 
 
-    if continue_tra:
+    if kwargs['continue_tra']:
         wandb.init(config = hyperparameter_defaults, project = kwargs["project_name"], entity = 'moh1371',
                     name = hyperparameter_defaults['run'], resume = "must", id = kwargs["wandb_id"])
         print("wandb resumed...")
@@ -87,27 +50,8 @@ def train(**kwargs):
 
 
     val_every = 2
-    img_w = kwargs["input_dim"]
-    img_h = kwargs["input_dim"]
-
-    input_preproc = preprocessing()
-    gt_preproc = preprocessing()
-
-
-    if torch.cuda.is_available():
-        device = torch.device("cuda:0")
-        print("Running on the GPU")
-    else:
-        device = torch.device("cpu")
-        print("Running on the CPU")
-
-
-    model = VariationalTransformer(**kwargs)
-    if kwargs["continue_tra"]:
-        model.load_state_dict(torch.load(kwargs["model_add"])['model_state_dict'])
-        print("model state dict loaded...")
-
-    model = unet.to(device)
+    img_w = kwargs["input_img_dim"][0]
+    img_h = kwargs["input_img_dim"][1]
 
 
     preprocess_in = transforms.Compose([
@@ -119,14 +63,35 @@ def train(**kwargs):
         transforms.ToTensor(),
     ])
 
-    tr_loader = CityscapesLoader(data_path, preprocess_in, preprocess_ou, mode = 'train')
-    train_loader = DataLoader(dataset = tr_loader, batch_size = wandb.config.batch_size, shuffle = True)
+    tr_loader = CityscapesLoader(dataset_path = kwargs["data_path"], transform_in = preprocess_in, mode = 'train')
+    train_loader = DataLoader(dataset = tr_loader, batch_size = kwargs["batch_size"], shuffle = True)
+    kwargs["num_cat"] = tr_loader.get_num_classes()
 
-    val_loader = CityscapesLoader(data_path, preprocess_in, preprocess_ou, mode = 'val')
-    val_loader = DataLoader(dataset = val_loader, batch_size = wandb.config.batch_size, shuffle = True)
+    val_loader = CityscapesLoader(dataset_path = kwargs["data_path"], transform_in = preprocess_in, mode = 'val')
+    val_loader = DataLoader(dataset = val_loader, batch_size = kwargs["batch_size"], shuffle = True)
 
-    #weight_decay = 1e-5
-    optimizer = torch.optim.AdamW(model.parameters, lr =  kwargs["continue_tra"], weight_decay =  0)
+
+
+    if torch.cuda.is_available():
+        device = torch.device("cuda:0")
+        print("Running on the GPU")
+    else:
+        device = torch.device("cpu")
+        print("Running on the CPU")
+
+    device = torch.device("cpu")
+
+
+    model = VariationalTransformer(**kwargs)
+    if kwargs["continue_tra"]:
+        model.load_state_dict(torch.load(kwargs["model_add"])['model_state_dict'])
+        print("model state dict loaded...")
+
+    model = model.to(device)
+
+
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr =  kwargs["learning_rate"], weight_decay = kwargs["momentum"])
     criterion = nn.BCEWithLogitsLoss(size_average = False, reduce = False, reduction = None)
 
 
@@ -138,10 +103,11 @@ def train(**kwargs):
     tr_loss = 0.0
     val_loss = 0.0
     best_val = 1e10
+    beta = 10.0
     wandb.watch(model)
 
     start_epoch = 0
-    end_epoch = wandb.config.epochs
+    end_epoch = kwargs["epochs"]
 
     if kwargs["continue_tra"]:
         start_epoch = torch.load(kwargs["model_add"])['epoch'] + 1
@@ -165,19 +131,18 @@ def train(**kwargs):
                         batbar.set_description("Batch {}".format(i + 1))
                         optimizer.zero_grad()
 
-                        prior_latent_space, posterior_latent_space, reconstruct_posterior = model.forward(batch['image'], batch['label'])
-                        break
+                        prior_latent_space, posterior_latent_space, reconstruct_posterior = model.forward(batch['image'].to(device), batch['label'].to(device))
 
-                        #elbo = elbo(batch['label'], prior_latent_space, posterior_latent_space, reconstruct_posterior, reconstruct_prior)
-
-                        kl = torch.mean(kl.kl_divergence(posterior_latent_space, prior_latent_space))
+                        kl_loss = torch.mean(kl.kl_divergence(posterior_latent_space, prior_latent_space))
                         reconstruction_loss = criterion(input = reconstruct_posterior, target = batch['label'])
-                        reconstruction_loss = torch.sum(reconstruction_loss)
-                        #mean_reconstruction_loss = torch.mean(reconstruction_loss)
+                        #print(reconstruction_loss.shape)
+                        reconstruction_loss = torch.mean(reconstruction_loss)
 
-                        elbo = reconstruction_loss + (beta * kl)
-                        reg_loss = l2_regularisation(model.posterior) + l2_regularisation(model.prior) + l2_regularisation(model.decoder_emb) + l2_regularisation(model.transformer)
-                        loss = elbo + (kwargs["continue_tra"] * reg_loss)
+                        elbo = reconstruction_loss + (beta * kl_loss)
+                        #reg_loss = l2_regularisation(model.posterior) + l2_regularisation(model.prior) + l2_regularisation(model.decoder_emb) + l2_regularisation(model.transformer)
+                        #loss = elbo + (kwargs["continue_tra"] * reg_loss)
+                        loss = elbo
+                        #print(loss)
                         loss.backward()
                         optimizer.step()
 
@@ -187,7 +152,6 @@ def train(**kwargs):
                         images = batch['image']
                         labels = batch['label']
 
-                break
 
 
                 org_img = {'input':wandb.Image(batch['image']),
@@ -211,7 +175,7 @@ def train(**kwargs):
                                 optimizer.zero_grad()
 
                                 reconstruction_loss = []
-                                for reconstruct_prior in model.inference(batch['image']):
+                                for reconstruct_prior in model.inference(batch['image'].to(device)):
                                     reconstruction_loss.append(criterion(input = reconstruct_prior, target = batch['label']).item())
 
                                 val_loss += mean(reconstruction_loss)
@@ -221,10 +185,10 @@ def train(**kwargs):
                         wandb.log({"val_loss": val_loss, "epoch": epoch + 1})
                         if val_loss < best_val:
 
-                            newpath = base_add + "/checkpoints/{}".format(hyperparameter_defaults['run'])
+                            newpath = os.path.join(base_add, "checkpoints", hyperparameter_defaults['run'])
 
-                            if not os.path.exists(base_add + "/checkpoints"):
-                                os.makedirs(base_add + "/checkpoints")
+                            if not os.path.exists(os.path.join(base_add, "checkpoints")):
+                                os.makedirs(os.path.join(base_add, "checkpoints"))
 
                             if not os.path.exists(newpath):
                                 os.makedirs(newpath)
@@ -235,4 +199,5 @@ def train(**kwargs):
                                 'optimizer_state_dict': optimizer.state_dict(),
                                 'tr_loss': tr_loss,
                                 'val_loss': val_loss,
-                                }, newpath + "/best.pth")
+                                'hyper_params': kwargs,
+                                }, os.path.join(newpath, "best.pth"))

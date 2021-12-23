@@ -139,7 +139,7 @@ class TransformerEncoderLayer(nn.Module):
 
 class TransformerDecoderLayer(nn.Module):
 
-    def __init__(self, d_model, nhead, dim_feedforward=2048, dropout=0,
+    def __init__(self, d_model, nhead, dim_feedforward = 2048, dropout = 0,
                  activation="relu"):
 
         super().__init__()

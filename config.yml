@@ -1,0 +1,39 @@
+
+input_img_dim:
+  [256,256]
+transformer_emb_dim:
+  256
+transformer_num_heads:
+  2
+transformer_num_encoder_layer:
+  1
+transformer_num_dec_layer:
+  1
+transformer_intermediate_layer_dim:
+  512
+transformer_dropout_per:
+  0.
+prior_input_channels:
+  3
+prior_posterior_layers:
+  [64,128,256]
+posterior_input_channels:
+  37
+batch_size:
+  100
+momentum:
+  0.0001
+epochs:
+  100
+learning_rate:
+  0.00001
+data_path:
+  "../datasets/augmented_cityscapes"
+run_name:
+  "cityscapes_first_attempt"
+project_name:
+  "variational_transformer"
+continue_tra:
+  False
+wandb_id:
+  "test"

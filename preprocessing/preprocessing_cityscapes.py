@@ -45,32 +45,36 @@ customized_augment_transforms = [
 ]
 
 
-def preparing_cityscapes(dataset_add, dest, output_shape:tuple = (256, 256), mode = "train", data_set_mode = "labelIds"):
+def preparing_cityscapes(dataset_add, dest, output_shape:tuple = (256, 256), mode = "train"):
 
     count_img = 0
     count_mask = 0
+    count_color = 0
     save_img_add = os.path.join(dest, "images", mode)
     save_mask_add = os.path.join(dest, "masks", mode)
+    save_color_add = os.path.join(dest, "color", mode)
     add = os.path.join(dataset_add, mode, "*")
     final_image_dim = eval(output_shape)
 
-    print(save_img_add)
     if not os.path.exists(save_img_add):
         os.makedirs(save_img_add)
 
-
     if not os.path.exists(save_mask_add):
         os.makedirs(save_mask_add)
+
+    if not os.path.exists(save_color_add):
+        os.makedirs(save_color_add)
 
 
     for folder in glob.iglob(add):
         for file in glob.iglob(os.path.join(folder,"*")):
 
-
             img_add = file
             print(img_add)
-            gtFine = img_add.replace("leftImg8bit", "gtFine_{}".format(data_set_mode))
-            gtFine = gtFine.replace("gtFine_{}".format(data_set_mode), "gtFine", 1)
+            gtFine = img_add.replace("leftImg8bit", "gtFine_labelIds")
+            gtFine = gtFine.replace("gtFine_labelIds", "gtFine", 1)
+            gtFine_color = img_add.replace("leftImg8bit", "gtFine_color")
+            gtFine_color = gtFine_color.replace("gtFine_color", "gtFine", 1)
 
 
             img = Image.open(img_add)
@@ -83,6 +87,12 @@ def preparing_cityscapes(dataset_add, dest, output_shape:tuple = (256, 256), mod
             transforms.Resize(final_image_dim)(seg_mask).save(os.path.join(save_mask_add, "{}.jpg".format(str(count_mask).zfill(6))))
             count_mask += 1
             seg_mask = transforms.FiveCrop((int(input_image_shape[0]/2), int(input_image_shape[1]/2)))(seg_mask)
+
+
+            seg_color = Image.open(gtFine_color).convert('RGB')
+            transforms.Resize(final_image_dim)(seg_color).save(os.path.join(save_color_add, "{}.jpg".format(str(count_color).zfill(6))))
+            count_color += 1
+            seg_color = transforms.FiveCrop((int(input_image_shape[0]/2), int(input_image_shape[1]/2)))(seg_color)
 
             for i in range(len(img)):
 
@@ -98,19 +108,26 @@ def preparing_cityscapes(dataset_add, dest, output_shape:tuple = (256, 256), mod
 
                 tmp_mask = transforms.Resize(final_image_dim)(seg_mask[i])
                 tmp_mask.save(os.path.join(save_mask_add, "{}.jpg".format(str(count_mask).zfill(6))))
-
                 count_mask += 1
+
+                tmp_color = transforms.Resize(final_image_dim)(seg_color[i])
+                tmp_color.save(os.path.join(save_color_add, "{}.jpg".format(str(count_color).zfill(6))))
+                count_color += 1
+
                 if isinstance(transf, RandomAffine):
                     transf(tmp_mask).save(os.path.join(save_mask_add, "{}.jpg".format(str(count_mask).zfill(6))))
-
+                    transf(tmp_color).save(os.path.join(save_color_add, "{}.jpg".format(str(count_color).zfill(6))))
+                    count_color += 1
                     count_mask += 1
                 else:
                     tmp_mask.save(os.path.join(save_mask_add, "{}.jpg".format(str(count_mask).zfill(6))))
+                    tmp_color.save(os.path.join(save_color_add, "{}.jpg".format(str(count_color).zfill(6))))
                     count_mask += 1
+                    count_color += 1
 
 
 def main(arg):
-    preparing_cityscapes(dataset_add = arg[1], dest = arg[2], output_shape = arg[3], mode = arg[4], data_set_mode = arg[5])
+    preparing_cityscapes(dataset_add = arg[1], dest = arg[2], output_shape = arg[3], mode = arg[4])
 
 if __name__ == "__main__":
     main(sys.argv)

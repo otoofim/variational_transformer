@@ -47,6 +47,11 @@ class VariationalTransformer(nn.Module):
         self.prior = AxisAlignedConvGaussian(input_channels = kwargs['prior_input_channels'], filters_enc = layers, inp_dim = kwargs['input_img_dim'])
         self.posterior = AxisAlignedConvGaussian(input_channels = kwargs['posterior_input_channels'], filters_enc = layers, inp_dim = kwargs['input_img_dim'])
 
+        self.output_layer = nn.Sequential(
+            nn.Conv2d(in_channels = 1, out_channels = kwargs["num_cat"], kernel_size = 3, padding = 1, bias = True),
+            nn.Softmax(dim=1)
+        )
+
     def inference(self, img):
 
         prior_latent_space = self.prior.forward(img)
@@ -75,6 +80,7 @@ class VariationalTransformer(nn.Module):
         resnet_features = self.backbone(img)
         decoder_embedding = self.decoder_emb(latent_vector_posterior.unsqueeze(1).view(self.batch_size, 1, int(math.sqrt(latent_vector_posterior.shape[1])), -1))
         reconstruct_posterior = self.transformer.forward(resnet_features.contiguous().view(self.batch_size, self.seq_length, -1), decoder_embedding.contiguous().view(self.batch_size, self.seq_length, -1))
+        reconstruct_posterior = self.output_layer(reconstruct_posterior.unsqueeze(1))
 
         return prior_latent_space, posterior_latent_space, reconstruct_posterior
 
