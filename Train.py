@@ -49,7 +49,7 @@ def train(**kwargs):
                     name = hyperparameter_defaults['run'], resume = "allow")
 
 
-    val_every = 2
+    val_every = 1
     img_w = kwargs["input_img_dim"][0]
     img_h = kwargs["input_img_dim"][1]
 
@@ -57,18 +57,20 @@ def train(**kwargs):
     preprocess_in = transforms.Compose([
         transforms.ToTensor(),
         transforms.Normalize(mean = [0.485, 0.456, 0.406], std = [0.229, 0.224, 0.225]),
+        transforms.Resize(kwargs["input_img_dim"])
     ])
 
     preprocess_ou = transforms.Compose([
         transforms.ToTensor(),
+        transforms.Resize(kwargs["input_img_dim"])
     ])
 
-    tr_loader = CityscapesLoader(dataset_path = kwargs["data_path"], transform_in = preprocess_in, mode = 'train')
-    train_loader = DataLoader(dataset = tr_loader, batch_size = kwargs["batch_size"], shuffle = True)
+    tr_loader = CityscapesLoader(dataset_path = kwargs["data_path"], transform_in = preprocess_in, transform_ou = preprocess_ou, mode = 'train')
+    train_loader = DataLoader(dataset = tr_loader, batch_size = kwargs["batch_size"], shuffle = True, drop_last = True)
     kwargs["num_cat"] = tr_loader.get_num_classes()
 
-    val_loader = CityscapesLoader(dataset_path = kwargs["data_path"], transform_in = preprocess_in, mode = 'val')
-    val_loader = DataLoader(dataset = val_loader, batch_size = kwargs["batch_size"], shuffle = True)
+    val_loader = CityscapesLoader(dataset_path = kwargs["data_path"], transform_in = preprocess_in, transform_ou = preprocess_ou, mode = 'val')
+    val_loader = DataLoader(dataset = val_loader, batch_size = kwargs["batch_size"], shuffle = True, drop_last = True)
 
 
 
@@ -135,13 +137,12 @@ def train(**kwargs):
 
                         kl_loss = torch.mean(kl.kl_divergence(posterior_latent_space, prior_latent_space))
                         reconstruction_loss = criterion(input = reconstruct_posterior, target = batch['label'])
-                        #print(reconstruction_loss.shape)
                         reconstruction_loss = torch.mean(reconstruction_loss)
 
                         elbo = reconstruction_loss + (beta * kl_loss)
                         #reg_loss = l2_regularisation(model.posterior) + l2_regularisation(model.prior) + l2_regularisation(model.decoder_emb) + l2_regularisation(model.transformer)
                         #loss = elbo + (kwargs["continue_tra"] * reg_loss)
-                        loss = elbo
+                        loss = elbo * 1.0
                         #print(loss)
                         loss.backward()
                         optimizer.step()
@@ -154,11 +155,12 @@ def train(**kwargs):
 
 
 
-                org_img = {'input':wandb.Image(batch['image']),
-                "ground truth":wandb.Image(batch['label']),
-                "prediction":wandb.Image(out)}
-
-                wandb.log(org_img)
+                # print(len(batch['image']))
+                # org_img = {'input':wandb.Image(batch['image'].permute(0,2,3,1)),
+                # "ground truth":wandb.Image(batch['seg'].permute(0,2,3,1)),
+                # "prediction":wandb.Image(out.unsqueeze(1).sueeze(3))}
+                #
+                # wandb.log(org_img)
 
 
                 tr_loss /= len(train_loader)
@@ -176,7 +178,7 @@ def train(**kwargs):
 
                                 reconstruction_loss = []
                                 for reconstruct_prior in model.inference(batch['image'].to(device)):
-                                    reconstruction_loss.append(criterion(input = reconstruct_prior, target = batch['label']).item())
+                                    reconstruction_loss.append(torch.mean(criterion(input = reconstruct_prior, target = batch['label'])).item())
 
                                 val_loss += mean(reconstruction_loss)
 

@@ -37,7 +37,8 @@ class CityscapesLoader(Dataset):
         img = Image.open(self.dataset[idx])
         seg_mask = np.array(Image.open(self.dataset[idx].replace("images", "masks")))
         seg_color = np.array(Image.open(self.dataset[idx].replace("images", "color")).convert('RGB'))
-        label = torch.tensor(self.create_prob_mask(seg_mask))
+        #label = torch.tensor(self.create_prob_mask(seg_mask))
+        label = self.create_prob_mask(seg_mask)
 
         if self.transform_in:
             img = self.transform_in(img)
@@ -46,7 +47,7 @@ class CityscapesLoader(Dataset):
             label = self.transform_ou(label)
             #seg_color = transforms.ToTensor()(self.transform_ou(seg_color))
 
-        return {'image': img.float(), 'label': label.permute(2,0,1).float(), "seg": seg_color.float()}
+        return {'image': img.float(), 'label': label.float(), "seg": seg_color.float()}
 
 
     def get_num_classes(self):

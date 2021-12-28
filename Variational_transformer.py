@@ -61,6 +61,7 @@ class VariationalTransformer(nn.Module):
             latent_vector_prior = self.sample(prior_latent_space, training = False)
             decoder_embedding = self.decoder_emb(latent_vector_prior.unsqueeze(1).view(img.shape[0], 1, int(math.sqrt(latent_vector_prior.shape[1])), -1))
             reconstruct_prior = self.transformer.decoder.forward(transformer_encoder_output, decoder_embedding.contiguous().view(img.shape[0], self.seq_length, -1))
+            reconstruct_prior = self.output_layer(reconstruct_prior.unsqueeze(1))
             yield reconstruct_prior
 
 
