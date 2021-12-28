@@ -13,12 +13,8 @@ transformer_intermediate_layer_dim:
   512
 transformer_dropout_per:
   0.
-prior_input_channels:
-  3
 prior_posterior_layers:
   [64,128,256]
-posterior_input_channels:
-  37
 batch_size:
   128
 momentum:

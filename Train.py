@@ -73,6 +73,10 @@ def train(**kwargs):
     val_loader = DataLoader(dataset = val_loader, batch_size = kwargs["batch_size"], shuffle = True, drop_last = True)
 
 
+    
+    kwargs["posterior_input_channels"] = tr_loader[0]['label'].shape[0] + tr_loader[0]['image'].shape[0]
+    kwargs["prior_input_channels"] = tr_loader[0]['image'].shape[0]
+    
 
     if torch.cuda.is_available():
         device = torch.device("cuda:0")
