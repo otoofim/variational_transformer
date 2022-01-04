@@ -125,7 +125,8 @@ class TransformerEncoderLayer(nn.Module):
                  embeded_input,
                  selfAttn_mask = None,
                  selfAttn_padding_mask = None):
-        attn = self.self_attn(query = embeded_input, key = embeded_input, value = embeded_input, key_padding_mask = selfAttn_padding_mask, attn_mask = selfAttn_mask)[0]
+
+        attn = self.self_attn(query = embeded_input, key = torch.transpose(embeded_input, 1, 2), value = embeded_input, key_padding_mask = selfAttn_padding_mask, attn_mask = selfAttn_mask)[0]
 
         attn = embeded_input + self.dropout1(attn)
         attn = self.norm1(attn)

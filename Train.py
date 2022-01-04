@@ -106,10 +106,10 @@ def train(**kwargs):
         print("optimizer state dict loaded...")
 
 
-    tr_loss = 0.0
-    val_loss = 0.0
+    tr_loss = {"elbo":0., "reconstruct":0., "kl":0.}
+    val_loss = 0.
     best_val = 1e10
-    beta = 10.0
+    beta = 1.0
     wandb.watch(model)
 
     start_epoch = 0
@@ -125,7 +125,7 @@ def train(**kwargs):
                 epobar.set_description("Epoch {}".format(epoch + 1))
                 epobar.set_postfix(ordered_dict = {'tr_loss':tr_loss, 'val_loss':val_loss})
 
-                tr_loss = 0.0
+                tr_loss = {"elbo":0., "reconstruct":0., "kl":0.}
                 out = None
                 images = None
                 labels = None
@@ -143,23 +143,23 @@ def train(**kwargs):
                         reconstruction_loss = criterion(input = reconstruct_posterior, target = batch['label'])
                         reconstruction_loss = torch.mean(reconstruction_loss)
 
-                        elbo = reconstruction_loss + (beta * kl_loss)
+                        elbo = 1.0 * (reconstruction_loss + (beta * kl_loss))
                         #reg_loss = l2_regularisation(model.posterior) + l2_regularisation(model.prior) + l2_regularisation(model.decoder_emb) + l2_regularisation(model.transformer)
-                        #loss = elbo + (kwargs["continue_tra"] * reg_loss)
-                        loss = elbo * 1.0
-                        #print(loss)
+                        #loss = elbo + (kwargs["momentum"] * reg_loss)
+                        loss = elbo
                         loss.backward()
                         optimizer.step()
 
 
-                        tr_loss += loss.item()
+                        tr_loss["elbo"] += loss.item()
+                        tr_loss["reconstruct"] += reconstruction_loss.item()
+                        tr_loss["kl"] += kl_loss.item()
 
-                        images = batch['image']
-                        labels = batch['label']
+#                         images = batch['image']
+#                         labels = batch['label']
 
 
 
-                # print(len(batch['image']))
                 # org_img = {'input':wandb.Image(batch['image'].permute(0,2,3,1)),
                 # "ground truth":wandb.Image(batch['seg'].permute(0,2,3,1)),
                 # "prediction":wandb.Image(out.unsqueeze(1).sueeze(3))}
@@ -167,8 +167,13 @@ def train(**kwargs):
                 # wandb.log(org_img)
 
 
-                tr_loss /= len(train_loader)
-                wandb.log({"tr_loss": tr_loss, "epoch": epoch + 1})
+                tr_loss["elbo"] /= len(train_loader)
+                tr_loss["reconstruct"] /= len(train_loader)
+                tr_loss["kl"] /= len(train_loader)
+                
+                wandb.log({"elbo": tr_loss["elbo"], "epoch": epoch + 1})
+                wandb.log({"reconstruct": tr_loss["reconstruct"], "epoch": epoch + 1})
+                wandb.log({"kl": tr_loss["kl"], "epoch": epoch + 1})
 
 
                 if ((epoch+1) % val_every == 0):
@@ -189,6 +194,9 @@ def train(**kwargs):
 
                         val_loss /= len(val_loader)
                         wandb.log({"val_loss": val_loss, "epoch": epoch + 1})
+                        
+                        
+                        
                         if val_loss < best_val:
 
                             newpath = os.path.join(base_add, "checkpoints", hyperparameter_defaults['run'])

@@ -1,9 +1,10 @@
 import torch
 import torch.nn as nn
 from Transformer import *
-from VAE import *
+from PP import *
 import math
-
+import functools
+import operator
 
 def prior_last_layer(dim_in, stride = [1, 1], padding = [0, 0], dilation = [1, 1], kernel_size = [1, 1], output_padding = [0, 0]):
 
@@ -44,8 +45,11 @@ class VariationalTransformer(nn.Module):
 
         self.decoder_emb = nn.ConvTranspose2d(1, self.seq_length, kernel_size = 1, stride = 1)
 
-        self.prior = AxisAlignedConvGaussian(input_channels = kwargs['prior_input_channels'], filters_enc = layers, inp_dim = kwargs['input_img_dim'])
-        self.posterior = AxisAlignedConvGaussian(input_channels = kwargs['posterior_input_channels'], filters_enc = layers, inp_dim = kwargs['input_img_dim'])
+#         self.prior = AxisAlignedConvGaussian(input_channels = kwargs['prior_input_channels'], filters_enc = layers, inp_dim = kwargs['input_img_dim'])
+#         self.posterior = AxisAlignedConvGaussian(input_channels = kwargs['posterior_input_channels'], filters_enc = layers, inp_dim = kwargs['input_img_dim'])
+
+        self.prior = AxisAlignedConvGaussian(input_channels = kwargs['prior_input_channels'], num_filters = layers, no_convs_per_block = kwargs['pp_cnn_per_block'], latent_dim = kwargs['latent_dim']).to(device)
+        self.posterior = AxisAlignedConvGaussian(input_channels = kwargs['posterior_input_channels'], num_filters = layers, no_convs_per_block = kwargs['pp_cnn_per_block'], latent_dim = kwargs['latent_dim'], posterior=True).to(device)
 
         self.output_layer = nn.Sequential(
             nn.Conv2d(in_channels = 1, out_channels = kwargs["num_cat"], kernel_size = 3, padding = 1, bias = True),
