@@ -26,6 +26,7 @@ class VariationalTransformer(nn.Module):
         super(VariationalTransformer, self).__init__()
 
         self.batch_size = kwargs["batch_size"]
+        self.num_samples = kwargs["num_samples"]
         self.backbone = choose_backbone()
 
         self.backbone_output_dim = functools.reduce(operator.mul, self.backbone(torch.rand(1, *(kwargs['prior_input_channels'], kwargs['input_img_dim'][0], kwargs['input_img_dim'][1])))).shape
@@ -61,7 +62,7 @@ class VariationalTransformer(nn.Module):
         prior_latent_space = self.prior.forward(img)
         resnet_features = self.backbone(img)
         transformer_encoder_output = self.transformer.encoder.forward(resnet_features.contiguous().view(img.shape[0], self.seq_length, -1))
-        for _ in range(16):
+        for _ in range(self.num_samples):
             latent_vector_prior = self.sample(prior_latent_space, training = False)
             decoder_embedding = self.decoder_emb(latent_vector_prior.unsqueeze(1).view(img.shape[0], 1, int(math.sqrt(latent_vector_prior.shape[1])), -1))
             reconstruct_prior = self.transformer.decoder.forward(transformer_encoder_output, decoder_embedding.contiguous().view(img.shape[0], self.seq_length, -1))

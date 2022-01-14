@@ -21,7 +21,7 @@ class CityscapesLoader(Dataset):
 
         self.dataset = mylist = [f for f in glob.glob(os.path.join(dataset_path, "images", mode, "*"))]
         self.city_labels = city_labels
-
+        self.pixel_to_color = np.vectorize(self.return_color)
 
         self.transform_in = transform_in
         self.transform_ou = transform_ou
@@ -62,3 +62,15 @@ class CityscapesLoader(Dataset):
         label[indexs[0], indexs[1], seg_mask] = 1
 
         return label
+    
+    
+    
+    def return_color(self, idx):
+        return self.city_labels[idx].color
+    
+    
+    def prMask_to_color(self, img):
+
+        argmax = torch.argmax(img, dim = 1)
+        resu = self.pixel_to_color(argmax)
+        return torch.tensor(np.transpose(np.stack((resu[0],resu[1], resu[2])), (1,0,2,3))).float() 

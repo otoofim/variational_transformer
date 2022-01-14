@@ -78,14 +78,19 @@ def train(**kwargs):
     kwargs["prior_input_channels"] = tr_loader[0]['image'].shape[0]
     
 
-    if torch.cuda.is_available():
-        device = torch.device("cuda:0")
-        print("Running on the GPU")
-    else:
-        device = torch.device("cpu")
-        print("Running on the CPU")
+#     if torch.cuda.is_available():
+#         device = torch.device("cuda:0")
+#         print("Running on the GPU")
+#     else:
+#         device = torch.device("cpu")
+#         print("Running on the CPU")
 
-    device = torch.device("cpu")
+    if kwargs['device'] == "cpu":
+        device = torch.device("cpu")
+    elif kwargs['device'] == "gpu":
+        device = torch.device("cuda:0")
+        
+    
 
 
     model = VariationalTransformer(**kwargs)
@@ -137,15 +142,21 @@ def train(**kwargs):
                         batbar.set_description("Batch {}".format(i + 1))
                         optimizer.zero_grad()
 
+                        #forward pass
                         prior_latent_space, posterior_latent_space, reconstruct_posterior = model.forward(batch['image'].to(device), batch['label'].to(device))
-
+                        
+                        #for wandb logging
+                        output = reconstruct_posterior[-5:]
+                        
+                        #calculating lower bound loss function
                         kl_loss = torch.mean(kl.kl_divergence(posterior_latent_space, prior_latent_space))
                         reconstruction_loss = criterion(input = reconstruct_posterior, target = batch['label'])
                         reconstruction_loss = torch.mean(reconstruction_loss)
-
                         elbo = 1.0 * (reconstruction_loss + (beta * kl_loss))
                         #reg_loss = l2_regularisation(model.posterior) + l2_regularisation(model.prior) + l2_regularisation(model.decoder_emb) + l2_regularisation(model.transformer)
                         #loss = elbo + (kwargs["momentum"] * reg_loss)
+                        
+                        #back propagation
                         loss = elbo
                         loss.backward()
                         optimizer.step()
@@ -155,17 +166,17 @@ def train(**kwargs):
                         tr_loss["reconstruct"] += reconstruction_loss.item()
                         tr_loss["kl"] += kl_loss.item()
 
-#                         images = batch['image']
-#                         labels = batch['label']
+                        images = batch['image'][-5:]
+                        labels = batch['seg'][-5 :]
 
 
 
-                # org_img = {'input':wandb.Image(batch['image'].permute(0,2,3,1)),
-                # "ground truth":wandb.Image(batch['seg'].permute(0,2,3,1)),
-                # "prediction":wandb.Image(out.unsqueeze(1).sueeze(3))}
-                #
-                # wandb.log(org_img)
-
+                org_img = {'input': wandb.Image(images),
+                "ground truth": wandb.Image(labels),
+                "prediction": wandb.Image(tr_loader.prMask_to_color(output))
+                 }
+                
+                wandb.log(org_img)
 
                 tr_loss["elbo"] /= len(train_loader)
                 tr_loss["reconstruct"] /= len(train_loader)
@@ -181,19 +192,28 @@ def train(**kwargs):
                         with torch.no_grad():
                             val_loss = 0.0
                             for i, batch in enumerate(valbar):
+                                output = torch.zeros(kwargs["batch_size"], tr_loader[0]['label'].shape[0], img_w, img_h)
+                                images = batch['image'][-5:]
+                                labels = batch['seg'][-5 :]
 
                                 valbar.set_description("Val_batch {}".format(i + 1))
                                 optimizer.zero_grad()
 
                                 reconstruction_loss = []
                                 for reconstruct_prior in model.inference(batch['image'].to(device)):
-                                    reconstruction_loss.append(torch.mean(criterion(input = reconstruct_prior, target = batch['label'])).item())
-
+                                    loc_loss = torch.mean(criterion(input = reconstruct_prior, target = batch['label'])).item()
+                                    reconstruction_loss.append(loc_loss)
+                                    output += reconstruct_prior
                                 val_loss += mean(reconstruction_loss)
 
 
                         val_loss /= len(val_loader)
-                        wandb.log({"val_loss": val_loss, "epoch": epoch + 1})
+                        wandb.log({"val_loss": val_loss,
+                                   "epoch": epoch + 1,
+                                   "input_val": wandb.Image(images),
+                                   "ground truth val": wandb.Image(labels),
+                                   "prediction val": wandb.Image(tr_loader.prMask_to_color(output/kwargs["num_samples"])[-5:])
+                                  })
                         
                         
                         
