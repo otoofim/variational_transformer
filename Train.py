@@ -7,7 +7,6 @@ from torch.utils.data import DataLoader
 from matplotlib import pyplot as plt
 import torch.optim as optim
 from tqdm import tqdm
-from torch.utils.tensorboard import SummaryWriter
 import torchvision
 import wandb
 import os
@@ -73,10 +72,10 @@ def train(**kwargs):
     val_loader = DataLoader(dataset = val_loader, batch_size = kwargs["batch_size"], shuffle = True, drop_last = True)
 
 
-    
+
     kwargs["posterior_input_channels"] = tr_loader[0]['label'].shape[0] + tr_loader[0]['image'].shape[0]
     kwargs["prior_input_channels"] = tr_loader[0]['image'].shape[0]
-    
+
 
 #     if torch.cuda.is_available():
 #         device = torch.device("cuda:0")
@@ -89,8 +88,8 @@ def train(**kwargs):
         device = torch.device("cpu")
     elif kwargs['device'] == "gpu":
         device = torch.device("cuda:0")
-        
-    
+
+
 
 
     model = VariationalTransformer(**kwargs)
@@ -122,7 +121,7 @@ def train(**kwargs):
 
     if kwargs["continue_tra"]:
         start_epoch = torch.load(kwargs["model_add"])['epoch'] + 1
-        end_epoch = torch.load(kwargs["model_add"])['epoch'] + 1 + int(wandb.config.epochs)
+        end_epoch = torch.load(kwargs["model_add"])['epoch'] + 1 + int(wandb.config.hyper_params["epochs"])
 
 
     with tqdm(range(start_epoch, end_epoch), unit="epoch", leave = True, position = 0) as epobar:
@@ -144,10 +143,10 @@ def train(**kwargs):
 
                         #forward pass
                         prior_latent_space, posterior_latent_space, reconstruct_posterior = model.forward(batch['image'].to(device), batch['label'].to(device))
-                        
+
                         #for wandb logging
                         output = reconstruct_posterior[-5:]
-                        
+
                         #calculating lower bound loss function
                         kl_loss = torch.mean(kl.kl_divergence(posterior_latent_space, prior_latent_space))
                         reconstruction_loss = criterion(input = reconstruct_posterior, target = batch['label'])
@@ -155,7 +154,7 @@ def train(**kwargs):
                         elbo = 1.0 * (reconstruction_loss + (beta * kl_loss))
                         #reg_loss = l2_regularisation(model.posterior) + l2_regularisation(model.prior) + l2_regularisation(model.decoder_emb) + l2_regularisation(model.transformer)
                         #loss = elbo + (kwargs["momentum"] * reg_loss)
-                        
+
                         #back propagation
                         loss = elbo
                         loss.backward()
@@ -175,13 +174,13 @@ def train(**kwargs):
                 "ground truth": wandb.Image(labels),
                 "prediction": wandb.Image(tr_loader.prMask_to_color(output))
                  }
-                
+
                 wandb.log(org_img)
 
                 tr_loss["elbo"] /= len(train_loader)
                 tr_loss["reconstruct"] /= len(train_loader)
                 tr_loss["kl"] /= len(train_loader)
-                
+
                 wandb.log({"elbo": tr_loss["elbo"], "epoch": epoch + 1})
                 wandb.log({"reconstruct": tr_loss["reconstruct"], "epoch": epoch + 1})
                 wandb.log({"kl": tr_loss["kl"], "epoch": epoch + 1})
@@ -214,9 +213,9 @@ def train(**kwargs):
                                    "ground truth val": wandb.Image(labels),
                                    "prediction val": wandb.Image(tr_loader.prMask_to_color(output/kwargs["num_samples"])[-5:])
                                   })
-                        
-                        
-                        
+
+
+
                         if val_loss < best_val:
 
                             newpath = os.path.join(base_add, "checkpoints", hyperparameter_defaults['run'])

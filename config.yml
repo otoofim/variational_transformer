@@ -20,7 +20,7 @@ pp_cnn_per_block:
 latent_dim:
   256
 batch_size:
-  64
+  16
 num_samples:
   16
 momentum:
@@ -38,6 +38,8 @@ project_name:
 device:
   "cpu"
 continue_tra:
-  False
+  True
 wandb_id:
-  "test"
+  "20zdjkm6"
+model_add:
+  "./checkpoints/cityscapes_higher_lr/best.pth"
